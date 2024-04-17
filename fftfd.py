@@ -30,6 +30,139 @@ def plot(x, y, z, f):
 def error(P, P_a, norm=np.inf):
     return np.linalg.norm(P - P_a, norm) / np.linalg.norm(P, norm)
 
+def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray) -> np.ndarray:
+    """
+    Solve a tridiagonal linear system Ax = f using the Thomas algorithm.
+    Numba is used to speed up the computation.
+
+    Parameters
+    ----------
+    a: np.ndarray (N-1,)
+        Lower diagonal of the matrix A.
+    b: np.ndarray (N,)
+        Main diagonal of the matrix A.
+    c: np.ndarray (N-1,)
+        Upper diagonal of the matrix A.
+    f : np.ndarray (N,)
+        Right-hand side of the linear system.
+
+    Returns
+    -------
+    np.ndarray
+        Solution of the linear system.
+
+    Notes
+    -----
+    The Thomas algorithm is a specialized algorithm for solving tridiagonal
+    linear systems. It is more efficient than general-purpose algorithms such
+    as Gaussian elimination, especially for large systems.
+    """
+    # a, b, c = A # Get diagonals
+    N = b.shape[0]
+    v = np.zeros(N, dtype=np.complex128)
+    l = np.zeros(N - 1, dtype=np.complex128)
+    y = np.zeros(f.shape, dtype=np.complex128)
+    u = np.zeros(f.shape, dtype=np.complex128)
+    # Determine L, U
+    v[0] = b[0]
+    for k in range(1, N):
+        l[k-1] = a[k-1] / v[k-1]
+        v[k] = b[k] - l[k-1] * c[k-1]
+    # Solve Ly = f
+    y[0] = f[0]
+    for k in range(1, N):
+        y[k] = f[k] - l[k-1] * y[k-1]
+    # Solve Uu = y
+    u[-1] = y[-1] / v[-1]
+    #for k in range(N-1, -1, -1):
+    for k in range(-1, -N, -1):
+        u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
+    return u
+
+def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+    """
+    Compute the 3D Poisson equation using the FFT2D-FD method.
+    FFT2D for x-direction, y-direction and central differences for z-direction.
+
+    Parameters
+    ----------
+    f : array_like
+        Input array of shape (Ny, Nx, Nz) containing the right-hand side of the Poisson equation.
+    params : dict
+        Dictionary containing the parameters of the problem:
+        - Nx : int
+            Number of intervals in the x direction.
+        - Ny : int
+            Number of intervals in the y direction.
+        - Nz : int
+            Number of intervals in the z direction.
+        - dx : float
+            Spacing between grid points in the x direction.
+        - dy : float
+            Spacing between grid points in the y direction.
+        - dz : float
+            Spacing between grid points in the z direction.
+        - x : array_like
+            Array of shape (Nx,) containing the x coordinates of the grid points.
+        - y : array_like
+            Array of shape (Ny,) containing the y coordinates of the grid points.
+        - bc_on_z : list
+            List containing the boundary conditions on the z axis
+        - p_top : float
+            Pressure value at the top boundary.
+    solver : function, optional
+        Function to solve the tridiagonal system. Default is thomas_algorithm.
+
+    Returns
+    -------
+    ndarray (Ny, Nx)
+        Solution of the Poisson equation.
+    """
+    Nx, Ny, Nz = x.shape[0], y.shape[0], z.shape[0]
+    dz = z[1] - z[0]
+    x_max = x[-1] # Max x value
+    y_max = y[-1] # Max y value
+    # _, p_top = params['bc_on_z'][5] # Pressure top boundary condition
+    p_top = np.zeros((Nx, Ny))
+    # F = f[:-1, :-1] # Remove boundary
+    F = f[:, :, :-1] # Remove last slice
+    rr = np.fft.fftfreq(Nx - 1) * (Nx - 1)
+    ss = np.fft.fftfreq(Ny - 1) * (Ny - 1)
+    # Scale frequencies
+    kx = 2 * np.pi * rr * dz / x_max
+    ky = 2 * np.pi * ss * dz / y_max
+    # Compute FFT in x direction (column-wise)
+    F_k = np.fft.fft2(F, axes=(0, 1))
+    P_k = np.zeros_like(F_k)
+    # Compute FFT in the last row (top boundary condition)
+    P_kNz = np.fft.fft2(p_top, axes=(0, 1))
+    # Solve the system for each gamma
+    for r in range(Nx - 1):
+        for s in range(Ny - 1):
+            # Compute gamma
+            gamma_rs = - 2 - kx[r] ** 2 - ky[s] ** 2
+            # Create RHS of system
+            # F_k[s, r, 0] = 0 + 0.5 * dz * F_k[s, r, 1] # dp/dy = 0
+            F_k[r, s, 0] = 0 + 0.5 * dz * F_k[r, s, 1] # dp/dy = 0
+            # Substract coefficient of top boundary condition
+            # F_k[s, r, -1] -=  P_kNz[s, r] / dz ** 2 
+            F_k[r, s, -1] -=  P_kNz[r, s] / dz ** 2 
+            # Create A in the system. Only keep diagonals of matrix
+            a = np.ones(Nz - 2) / dz ** 2
+            b = np.ones(Nz - 1) * gamma_rs / dz ** 2
+            c = np.ones(Nz - 2) / dz ** 2
+            # Fix first coefficients
+            c[0] = (2 + 0.5 * gamma_rs) / dz
+            b[0] = -1 / dz
+            # Solve system A P_k = F_k
+            # P_k[s, r, :] = thomas_algorithm(a, b, c, F_k[s, r, :])
+            P_k[r, s, :] = thomas_algorithm(a, b, c, F_k[r, s, :])
+    # Compute IFFT in x direction (column-wise) to restore pressure
+    p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
+    # Add top boundary condition
+    p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
+    return p
+
 
 def poisson_iterative(x, y, p, f, p_top, tol=1e-10, n_iter=100):
     dx, dy = x[1] - x[0], y[1] - y[0]
@@ -118,49 +251,6 @@ def fd_solver(x, y, f, p_top, method='gmres', tol=1e-10, n_iter=1000):
     #P_a = np.hstack([P_a, P_a[:, 0].reshape(-1, 1)])
     return PP#P_a
 
-def fftfd_solver(x, y, f, p_top):
-    Nx, Ny = x.shape[0], y.shape[0]
-    dx, dy = x[1] - x[0], y[1] - y[0]
-    F = f[:-1, :-1] # Remove boundary
-    kx = np.fft.fftfreq(Nx - 1) * (Nx - 1)
-    # For any domain
-    #kx = 2 * np.pi * kx / x[-1]
-    F_k = np.fft.fft(F, axis=1)
-    P_k = np.zeros_like(F_k)
-    Dyv = np.zeros(Ny - 1)
-    Dyv[1] = 1
-    Dyv[-1] = 1
-    P_kNy = np.fft.fft(np.ones(Nx - 1) * p_top)
-    tmp = []
-    for i in range(Nx-1):
-        Dyv[0] = -2 - (kx[i] * dy) ** 2
-        Dy = spla.circulant(Dyv) / dy ** 2  
-        # Fix boundary conditions
-        Dy[0, 0] = - 1.5 * dy 
-        Dy[0, 1] = 2 * dy
-        Dy[0, 2] = - 0.5 * dy
-        Dy[0, -1] = 0
-        Dy[-1, 0] = 0
-        tmp.append(np.min(np.abs(np.linalg.eigvals(Dy))))
-        #print(kx[i], ":", np.min(np.abs(np.linalg.eigvals(Dy))))
-        F_k[0, i] = 0
-        F_k[-1, i] -=  P_kNy[i] / dy ** 2
-        P_k[:, i] = np.linalg.solve(Dy, F_k[:, i])
-    print(min(tmp))
-    P_FFTFD = np.real(np.fft.ifft(P_k, axis=1))
-    P_FFTFD = np.vstack([P_FFTFD, np.ones(Nx - 1) * p_top])
-    P_FFTFD = np.hstack([P_FFTFD, P_FFTFD[:, 0].reshape(-1, 1)])
-    return P_FFTFD
-
-def experiment(Nx, Ny, f, p, p_top, solver):
-    x = np.linspace(x_min, x_max, Nx)
-    y = np.linspace(y_min, y_max, Ny)
-    dx, dy = x[1] - x[0], y[1] - y[0]
-    X, Y = np.meshgrid(x, y)
-    F = f(X, Y)
-    P = p(X, Y)
-    P_a = solver(x, y, F, p_top)
-    return P, P_a
 
 def dd(X):
     D = np.diag(np.abs(X)) # Find diagonal coefficients
