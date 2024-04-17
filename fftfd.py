@@ -125,7 +125,7 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
     # _, p_top = params['bc_on_z'][5] # Pressure top boundary condition
     p_top = np.zeros((Nx, Ny))
     # F = f[:-1, :-1] # Remove boundary
-    F = f[:, :, :-1] # Remove last slice
+    F = f[:-1, :-1, :-1] # Remove last slice
     rr = np.fft.fftfreq(Nx - 1) * (Nx - 1)
     ss = np.fft.fftfreq(Ny - 1) * (Ny - 1)
     # Scale frequencies
@@ -159,6 +159,10 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
             P_k[r, s, :] = thomas_algorithm(a, b, c, F_k[r, s, :])
     # Compute IFFT in x direction (column-wise) to restore pressure
     p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
+    # Add x boundary condition
+    p = np.concatenate([p, np.expand_dims(p[0], axis=0)], axis=0)
+    # Add y boundary condition
+    p = np.concatenate([p, np.expand_dims(p[:, 0], axis=1)], axis=1)
     # Add top boundary condition
     p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
     return p
