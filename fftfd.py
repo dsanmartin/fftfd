@@ -1,5 +1,5 @@
 import numpy as np
-import sympy as sym
+#import sympy as sym
 import scipy.linalg as spla
 import scipy.sparse as spsp
 import scipy.sparse.linalg as spspla
@@ -82,53 +82,33 @@ def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray)
 def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
     """
     Compute the 3D Poisson equation using the FFT2D-FD method.
-    FFT2D for x-direction, y-direction and central differences for z-direction.
+    FFT2D for x-direction, y-direction and central finite differences for z-direction.
 
     Parameters
     ----------
     f : array_like
-        Input array of shape (Ny, Nx, Nz) containing the right-hand side of the Poisson equation.
-    params : dict
-        Dictionary containing the parameters of the problem:
-        - Nx : int
-            Number of intervals in the x direction.
-        - Ny : int
-            Number of intervals in the y direction.
-        - Nz : int
-            Number of intervals in the z direction.
-        - dx : float
-            Spacing between grid points in the x direction.
-        - dy : float
-            Spacing between grid points in the y direction.
-        - dz : float
-            Spacing between grid points in the z direction.
-        - x : array_like
-            Array of shape (Nx,) containing the x coordinates of the grid points.
-        - y : array_like
-            Array of shape (Ny,) containing the y coordinates of the grid points.
-        - bc_on_z : list
-            List containing the boundary conditions on the z axis
-        - p_top : float
-            Pressure value at the top boundary.
-    solver : function, optional
-        Function to solve the tridiagonal system. Default is thomas_algorithm.
+        Input array of shape (Nx, Ny, Nz) containing the right-hand side of the Poisson equation.
+    x : array_like
+        Array of shape (Nx,) containing the x coordinates.
+    y : array_like
+        Array of shape (Ny,) containing the y coordinates.
+    z : array_like
+        Array of shape (Nz,) containing the z coordinates.
 
     Returns
     -------
-    ndarray (Ny, Nx)
-        Solution of the Poisson equation.
+    ndarray (Nx, Ny, Nz)
+        Approximation of the Poisson equation.
     """
     Nx, Ny, Nz = x.shape[0], y.shape[0], z.shape[0]
     dz = z[1] - z[0]
     x_max = x[-1] # Max x value
     y_max = y[-1] # Max y value
-    # _, p_top = params['bc_on_z'][5] # Pressure top boundary condition
-    p_top = np.zeros((Nx, Ny))
-    # F = f[:-1, :-1] # Remove boundary
-    F = f[:-1, :-1, :-1] # Remove last slice
+    p_top = np.zeros((Nx, Ny)) # Top boundary condition p = 0
+    F = f[:-1, :-1, :-1] # Removing boundaries and top boundary condition
     rr = np.fft.fftfreq(Nx - 1) * (Nx - 1)
     ss = np.fft.fftfreq(Ny - 1) * (Ny - 1)
-    # Scale frequencies
+    # Scale frequencies for any domain
     kx = 2 * np.pi * rr * dz / x_max
     ky = 2 * np.pi * ss * dz / y_max
     # Compute FFT in x direction (column-wise)
@@ -142,10 +122,8 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
             # Compute gamma
             gamma_rs = - 2 - kx[r] ** 2 - ky[s] ** 2
             # Create RHS of system
-            # F_k[s, r, 0] = 0 + 0.5 * dz * F_k[s, r, 1] # dp/dy = 0
             F_k[r, s, 0] = 0 + 0.5 * dz * F_k[r, s, 1] # dp/dy = 0
             # Substract coefficient of top boundary condition
-            # F_k[s, r, -1] -=  P_kNz[s, r] / dz ** 2 
             F_k[r, s, -1] -=  P_kNz[r, s] / dz ** 2 
             # Create A in the system. Only keep diagonals of matrix
             a = np.ones(Nz - 2) / dz ** 2
@@ -155,9 +133,8 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
             c[0] = (2 + 0.5 * gamma_rs) / dz
             b[0] = -1 / dz
             # Solve system A P_k = F_k
-            # P_k[s, r, :] = thomas_algorithm(a, b, c, F_k[s, r, :])
             P_k[r, s, :] = thomas_algorithm(a, b, c, F_k[r, s, :])
-    # Compute IFFT in x direction (column-wise) to restore pressure
+    # Compute IFFT in x-y slices to restore the 'physical' pressure
     p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
     # Add x boundary condition
     p = np.concatenate([p, np.expand_dims(p[0], axis=0)], axis=0)
