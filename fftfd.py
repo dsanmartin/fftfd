@@ -1,5 +1,4 @@
 import numpy as np
-#import sympy as sym
 import scipy.linalg as spla
 import scipy.sparse as spsp
 import scipy.sparse.linalg as spspla
@@ -9,9 +8,6 @@ import matplotlib.pyplot as plt
 def plot(x, y, z, f):
     i, j, k = x.shape[0] // 2, y.shape[0] // 2, z.shape[0] // 2
     fig, ax = plt.subplots(1, 3, figsize=(14, 5))
-    # c1 = ax[0].contourf(x, y, f[:, :, k])
-    # c2 = ax[1].contourf(x, z, f[j, :, :].T)
-    # c3 = ax[2].contourf(y, z, f[:, i, :].T)
     c1 = ax[0].contourf(x, y, f[:, :, k].T)
     c2 = ax[1].contourf(x, z, f[:, j, :].T)
     c3 = ax[2].contourf(y, z, f[i, :, :].T)
