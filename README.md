@@ -12,9 +12,8 @@ It combines a 2D Fast Fourier Transform in $x$ and $y$ with second-order finite 
 - **General density $\rho(x,y,z)$**: fixed-point (Picard) or GMRES iteration in which every step is one direct solve, optionally with the horizontally averaged stratification included in the direct solver.
 
 This code is used in:
-* **A Mixed 2D Discrete Fourier Transform and Finite Difference Method for solving a 3D Poisson Equation**, presented in the *[XXXVI Jornada de Matemática de la Zona Sur](https://jmzs2024.uct.cl)*, April 24-26 2024, Campus San Juan Pablo II, Universidad Católica de Temuco.
-* The numerical implementation of a coupled atmosphere-wildfire model, https://github.com/dsanmartin/wildfire, described in [San Martin & Torres (2025)](https://doi.org/10.1016/j.cpc.2025.109746) and in the PhD thesis [doi:10.71959/k76w-qn05](https://doi.org/10.71959/k76w-qn05).
-* The manuscript in `paper/` (in preparation), which studies the solver on its own.
+* **A Mixed 2D Discrete Fourier Transform and Finite Difference Method for Solving a 3D Poisson Equation**, presented at the *XXXVI Jornada de Matemática de la Zona Sur*, Universidad Católica de Temuco (Campus San Juan Pablo II), April 24–26, 2024 ([abstract](https://drive.google.com/file/d/1lkNVFLabjullLxWOcN3T7dGjf0716NA7/view), [slides](https://drive.google.com/file/d/1h-TjD_LDXyfRLDOTw9K4RFtJ1Dl4CkRK/view)).
+* The numerical implementation of a coupled atmosphere-wildfire model ([`dsanmartin/wildfire`](https://github.com/dsanmartin/wildfire); GPU version in [`dsanmartin/wildfires`](https://github.com/dsanmartin/wildfires)), described in [San Martin & Torres (2025)](https://doi.org/10.1016/j.cpc.2025.109746) and the PhD thesis ([doi:10.71959/k76w-qn05](https://doi.org/10.71959/k76w-qn05)).
 
 The original implementation of the solver, developed for the thesis, is kept in `fftfd_original.py` (the same algorithm is in [`src/pressure.py`](https://github.com/dsanmartin/wildfire/blob/main/src/pressure.py) of the coupled-model repository). `solver.py` is a batched, multithreaded rewrite of it, extended to stretched vertical grids and variable density.
 
