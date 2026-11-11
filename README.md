@@ -16,13 +16,13 @@ This code is used in:
 * The numerical implementation of a coupled atmosphere-wildfire model, https://github.com/dsanmartin/wildfire, described in [San Martin & Torres (2025)](https://doi.org/10.1016/j.cpc.2025.109746) and in the PhD thesis [doi:10.71959/k76w-qn05](https://doi.org/10.71959/k76w-qn05).
 * The manuscript in `paper/` (in preparation), which studies the solver on its own.
 
+The original implementation of the solver, developed for the thesis, is kept in `fftfd_original.py` (the same algorithm is in [`src/pressure.py`](https://github.com/dsanmartin/wildfire/blob/main/src/pressure.py) of the coupled-model repository). `solver.py` is a batched, multithreaded rewrite of it, extended to stretched vertical grids and variable density.
+
 ## Installation
 
 Python 3.11 with NumPy, SciPy, Numba and Matplotlib:
 
 ```bash
-conda create -n sc -c conda-forge python=3.11
-conda activate sc
 pip install -r requirements.txt
 ```
 
@@ -71,13 +71,13 @@ Practical notes:
 |---|---|
 | `solver.py` | The solver (`FFTFDSolver`), finite-difference weights, stretched grid. |
 | `manufactured.py` | Manufactured solutions with analytical source terms. |
-| `smoke_test.py` | Quick check of every solver path; stores nothing. |
+| `fftfd_original.py` | Verbatim copy of the original implementation: uniform and non-uniform solvers and the fixed-point iteration for variable density. Timing baseline of the paper and reference for `smoke_test.py`. |
+| `smoke_test.py` | Quick check of every solver path, and of `solver.py` against the original implementation; stores nothing. |
 | `experiments.py` | Numerical experiments of the paper; writes `paper/data/results.json`. |
 | `fds_replay.py` | Replays FDS density and pressure fields through the solver; writes `paper/data/fds_replay.json`. |
 | `figures.py`, `tables.py` | Figures and LaTeX tables of the paper, from the data files. |
 | `paper/` | Manuscript sources, data, figures and tables. |
 | `fds/` | FDS input files for the fire case (see `fds/README.md`). |
-| `legacy/` | Original solver, notebooks and tests (see `legacy/README.md`). |
 
 ## Reproducing the paper
 
@@ -85,7 +85,7 @@ Practical notes:
 python experiments.py     # manufactured problems and timings (about 4 minutes)
 python fds_replay.py fds  # fire replay; needs the FDS output, see fds/README.md
 python figures.py         # paper/figures/  (needs a LaTeX installation for the labels)
-python tables.py          # paper/tables/
+python tables.py          # paper/tables/, including the timing numbers quoted in the text
 cd paper && latexmk -pdf main.tex
 ```
 

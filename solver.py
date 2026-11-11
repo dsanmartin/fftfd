@@ -13,7 +13,7 @@ with a 2D FFT in the horizontal directions and second-order finite differences o
 * ``FFTFDSolver.solve_variable_density`` general rho(x, y, z): fixed-point (Picard) or
                                          GMRES iteration preconditioned by the direct solver.
 
-Grid convention (same as ``legacy/fftfd.py``): ``x`` and ``y`` contain both end points, so the last
+Grid convention: ``x`` and ``y`` contain both end points, so the last
 node is the periodic image of the first one and there are ``Nx - 1`` independent nodes.
 """
 import time
@@ -130,7 +130,7 @@ class FFTFDSolver:
     x, y : uniform coordinates including both end points (periodic directions).
     z : vertical coordinates, uniform or not, from the bottom (Neumann) to the top (Dirichlet).
     beta : optional array (Nz,), d(log rho_bar)/dz of a density profile that depends on z only.
-    bottom : 'one-sided' (second-order one-sided difference, as in the original legacy/fftfd.py) or
+    bottom : 'one-sided' (second-order one-sided difference, as in the original implementation) or
              'ghost' (mirror node; uses the equation at z_0 and keeps the matrix diagonally dominant).
     workers : threads used by the FFTs (the tridiagonal solves use numba's thread pool).
     """

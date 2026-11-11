@@ -84,6 +84,23 @@ def main():
     check("stratified operator, density rho(z)", i_s["converged"] and i_s["iterations"] <= 2 and rel(ps, P) < 2e-2,
           "%d iterations, error %.1e" % (i_s["iterations"], rel(ps, P)))
 
+    # 6. solver.py against the original implementation (fftfd_original.py)
+    import fftfd_original as orig
+
+    x = np.linspace(0, L, 33)
+    P, _, F = mf.fields(x, x, x, mf.z_thesis, gauss)
+    d = np.abs(orig.fftfd(F.copy(), x, x, x) - FFTFDSolver(x, x, x).solve(F)).max()
+    check("original uniform solver reproduced", d < 1e-12, "max difference %.1e" % d)
+    z = stretched_grid(0.0, L, 33, 2.0)
+    P, _, F = mf.fields(x, x, z, mf.z_thesis, gauss)
+    d = np.abs(orig.fftfd_non_uniform_z(F.copy(), x, x, z) - FFTFDSolver(x, x, z).solve(F)).max()
+    check("original non-uniform solver reproduced", d < 1e-12, "max difference %.1e" % d)
+    P, RHO, F = mf.fields(x, x, x, mf.z_thesis, bump, theta=4.0, Zr=lambda Z: mf.z_layer(Z, L, 0.75), Hr=bump)
+    po = orig.solve_iterative(x, x, x, np.zeros_like(P), RHO, F, tol=1e-12, max_iter=50)
+    pn, _ = FFTFDSolver(x, x, x).solve_variable_density(F, RHO, method="picard", tol=1e-12)
+    check("original fixed-point iteration (variable density)", rel(po, P) < 2e-2 and rel(po, pn) < 1e-2,
+          "error %.1e, difference to solver.py %.1e" % (rel(po, P), rel(po, pn)))
+
     print("\n%d of %d checks passed" % (sum(CHECKS), len(CHECKS)))
     return 0 if all(CHECKS) else 1
 

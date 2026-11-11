@@ -1,4 +1,9 @@
-"""Figures for the paper, from paper/data/results.json (run experiments.py first)."""
+"""
+Figures for the paper, from paper/data/results.json (run experiments.py first).
+
+Every plot is written to its own file; the paper groups them with subcaptions. All plots of a
+group have the same canvas size, so they line up when placed side by side.
+"""
 import json
 import os
 
@@ -28,7 +33,7 @@ plt.rcParams.update({
     "legend.fontsize": 8, "xtick.labelsize": 8, "ytick.labelsize": 8, "axes.edgecolor": MUTED, "axes.labelcolor": INK,
     "xtick.color": MUTED, "ytick.color": MUTED, "axes.linewidth": 0.6, "axes.grid": True, "grid.color": GRID,
     "grid.linewidth": 0.5, "axes.axisbelow": True, "axes.spines.top": False, "axes.spines.right": False,
-    "lines.linewidth": 1.4, "lines.markersize": 4.5, "legend.frameon": False, "savefig.bbox": "tight", "savefig.pad_inches": 0.03,
+    "lines.linewidth": 1.4, "lines.markersize": 4.5, "legend.frameon": False,
 })
 
 
@@ -44,40 +49,49 @@ def reference(ax, xs, ys, order, label, anchor=0):
     ax.plot(xs, ys[anchor] * (xs / xs[anchor]) ** order, "--", color=MUTED, lw=0.9, label=label, zorder=1)
 
 
+# Canvas sizes in inches, for two and three plots per row of a 6.5 in text width
+HALF, WIDE, NARROW = (3.2, 2.5), (3.9, 2.5), (2.5, 2.5)
+FIELD = (2.15, 1.843)  # 0.60 x 2.15 = 0.70 x 1.843: the plot area is square
+
+
+def new(size):
+    fig, ax = plt.subplots(figsize=size, layout="constrained")
+    return fig, ax
+
+
 # ----------------------------------------------------------------------------------------
 def fig_convergence():
-    fig, axs = plt.subplots(1, 2, figsize=(6.6, 2.7), sharey=True)
     c = R["const"]
     dz = np.array(c["dz"])
-    ax = axs[0]
+    fig, ax = new(HALF)
     ax.loglog(dz, c["one-sided"]["l2"], "-", marker=MARK[0], color=C[0], label=r"relative $\ell_2$ error")
     ax.loglog(dz, c["one-sided"]["linf"], "-", marker=MARK[1], color=C[1], label=r"relative $\ell_\infty$ error")
     reference(ax, dz, 1.6 * np.array(c["one-sided"]["linf"]), 2, r"$\mathcal{O}(\Delta z^2)$")
+    ax.set_xscale("log", base=2)
+    ax.set_ylim(1e-5, 2e-1)
     ax.set_xlabel(r"$\Delta z$")
     ax.set_ylabel("error")
-    ax.set_title("(a)", loc="left")
     ax.legend(loc="lower right")
+    save(fig, "convergence_const")
 
     v = R["vd"]["convergence"]
     dzv = 2 * np.pi / (np.array(v["N"]) - 1)
-    ax = axs[1]
+    fig, ax = new(HALF)
     for i, th in enumerate(v["theta"]):
         ax.loglog(dzv, v["error_l2"][str(th)], "-", marker=MARK[i], color=C[i],
                   label=r"$\rho_{\max}/\rho_{\min}=%d$" % round(1 + th))
     reference(ax, dzv, 1.8 * np.array(v["error_l2"][str(v["theta"][-1])]), 2, r"$\mathcal{O}(\Delta z^2)$")
+    ax.set_xscale("log", base=2)
+    ax.set_ylim(1e-5, 2e-1)
     ax.set_xlabel(r"$\Delta z$")
-    ax.set_title("(b)", loc="left")
+    ax.set_ylabel(r"relative $\ell_2$ error")
     ax.legend(loc="lower right")
-    for ax in axs:
-        ax.set_xscale("log", base=2)
-    fig.tight_layout(w_pad=1.5)
-    save(fig, "convergence")
+    save(fig, "convergence_vd")
 
 
 def fig_nonuniform():
     n = R["nonuniform"]
-    fig, axs = plt.subplots(1, 2, figsize=(6.6, 2.7), gridspec_kw={"width_ratios": [1, 1.55]})
-    ax = axs[0]
+    fig, ax = new(NARROW)
     for i, k in enumerate(n["k"]):
         z = stretched_grid(0.0, 2 * np.pi, 33, k)
         ax.plot(np.full_like(z, i), z, linestyle="none", marker="_", markersize=14, markeredgewidth=0.8, color=RAMP[i + 1])
@@ -89,10 +103,10 @@ def fig_nonuniform():
     ax.set_ylim(0, 2 * np.pi)
     ax.set_xlabel(r"stretching parameter $k_s$")
     ax.set_ylabel(r"$z$")
-    ax.set_title("(a)", loc="left")
     ax.grid(False)
+    save(fig, "nonuniform_grid")
 
-    ax = axs[1]
+    fig, ax = new(WIDE)
     Nz = np.array(n["Nz"])
     for i, k in enumerate(n["k"]):
         ax.loglog(Nz - 1, n["linf"][str(k)], "-", marker=MARK[i], color=RAMP[i + 1],
@@ -101,30 +115,27 @@ def fig_nonuniform():
     ax.set_xscale("log", base=2)
     ax.set_xlabel(r"vertical intervals $N_z$")
     ax.set_ylabel(r"relative $\ell_\infty$ error")
-    ax.set_title("(b)", loc="left")
     ax.set_ylim(5e-6, 2e3)
     ax.legend(loc="upper right", ncol=3, columnspacing=1.0, handlelength=1.6, fontsize=7)
-    fig.tight_layout(w_pad=1.5)
-    save(fig, "nonuniform")
+    save(fig, "nonuniform_error")
 
 
 def fig_iterations():
     h = R["vd"]["histories"]
-    fig, axs = plt.subplots(1, 3, figsize=(6.6, 3.0), gridspec_kw={"width_ratios": [1, 1, 1.05]})
-    for ax, method, title in [(axs[0], "poisson/picard", "(a)"), (axs[1], "poisson/gmres", "(b)")]:
+    for method, name in [("poisson/picard", "iterations_fp"), ("poisson/gmres", "iterations_gmres")]:
+        fig, ax = new(HALF)
         for i, th in enumerate(h["theta"]):
             r = np.array(h["runs"][str(th)][method]["history"])
             ax.semilogy(np.arange(1, len(r) + 1), r, "-", marker=MARK[i], markersize=3, color=RAMP[i],
                         label="%d" % round(1 + th))
         ax.set_xlabel("iteration")
-        ax.set_title(title, loc="left")
+        ax.set_ylabel("relative residual")
         ax.set_xlim(0, 38)
         ax.set_ylim(1e-11, 3)
-    axs[0].set_ylabel("relative residual")
-    axs[1].set_yticklabels([])
-    axs[1].legend(title=r"$\rho_{\max}/\rho_{\min}$", loc="upper right", ncol=2, columnspacing=0.8, handlelength=1.4)
+        ax.legend(title=r"$\rho_{\max}/\rho_{\min}$", loc="upper right", ncol=2, columnspacing=0.8, handlelength=1.4)
+        save(fig, name)
 
-    ax = axs[2]
+    fig, ax = new(WIDE)
     t = R["vd"]["stratification"]
     s = np.array(t["LzHs"])
     series = [("poisson/picard", "fixed point", C[0], MARK[0]), ("poisson/gmres", "GMRES", C[1], MARK[1]),
@@ -132,24 +143,19 @@ def fig_iterations():
     for key, label, col, mk in series:
         its = [t["runs"]["4/%g" % v][key]["iterations"] if t["runs"]["4/%g" % v][key]["converged"] else np.nan for v in s]
         ax.plot(s, its, "-", marker=mk, color=col, label=label)
-    ax.annotate("diverges", xy=(11.3, 78), xytext=(12.6, 58), color=MUTED, fontsize=8, ha="left",
+    ax.annotate("diverges", xy=(11.0, 78), xytext=(11.8, 62), color=MUTED, fontsize=8, ha="left",
                 arrowprops=dict(arrowstyle="->", color=MUTED, lw=0.7))
     ax.set_ylim(0, 80)
     ax.set_xlabel(r"stratification $L_z/H_\rho$")
     ax.set_ylabel("iterations")
-    ax.set_title("(c)", loc="left")
-    handles, labels = ax.get_legend_handles_labels()
-    fig.tight_layout(w_pad=0.8, rect=(0, 0.09, 1, 1))
-    fig.legend(handles, labels, title="panel (c):", loc="lower right", ncol=4, fontsize=7, title_fontsize=7,
-               handlelength=1.4, columnspacing=1.0, bbox_to_anchor=(0.995, 0.0), alignment="left")
-    save(fig, "iterations")
+    ax.legend(loc="upper left", fontsize=7, handlelength=1.6)
+    save(fig, "iterations_strat")
 
 
 def fig_performance():
     p = R["perf"]
     N = np.array(p["N"])
-    fig, axs = plt.subplots(1, 2, figsize=(6.6, 2.7))
-    ax = axs[0]
+    fig, ax = new(HALF)
     loop = np.array([np.nan if v is None else v for v in p["loop"]], dtype=float)
     t1 = np.array([v["total"] for v in p["vector_1"]])
     ta = np.array([v["total"] for v in p["vector_all"]])
@@ -162,10 +168,10 @@ def fig_performance():
     ax.set_xscale("log", base=2)
     ax.set_xlabel(r"$N$ (intervals per direction)")
     ax.set_ylabel("time per solve (s)")
-    ax.set_title("(a)", loc="left")
     ax.legend(loc="upper left", fontsize=7)
+    save(fig, "performance_time")
 
-    ax = axs[1]
+    fig, ax = new(HALF)
     for i, key in enumerate(sorted(p["scaling"], key=int)):
         sc = p["scaling"][key]
         th = np.array(sc["threads"])
@@ -180,10 +186,8 @@ def fig_performance():
     ax.set_ylim(0, 10.5)
     ax.set_xlabel("threads")
     ax.set_ylabel("speed-up")
-    ax.set_title("(b)", loc="left")
     ax.legend(loc="upper left", fontsize=7)
-    fig.tight_layout(w_pad=1.5)
-    save(fig, "performance")
+    save(fig, "performance_scaling")
 
 
 # ----------------------------------------------------------------------------------------
@@ -192,69 +196,88 @@ def fig_performance():
 from matplotlib.colors import LinearSegmentedColormap
 
 SEQ = LinearSegmentedColormap.from_list("seq", ["#f7fafd", "#b7d3f6", "#5598e7", "#256abf", "#0d366b"])
-HEAT = LinearSegmentedColormap.from_list("heat", ["#fff6ec", "#f8c48f", "#eb6834", "#a8320f", "#4d1300"])
 DIV = LinearSegmentedColormap.from_list("div", ["#104281", "#2a78d6", "#9ec5f4", "#f0efec", "#f3b08f", "#eb6834", "#8a2d0b"])
 
 
-def panel(fig, ax, X, Z, F, cmap, label, symmetric=False, **kw):
-    if symmetric:
-        m = np.abs(F).max()
-        kw.update(vmin=-m, vmax=m)
+ERR = LinearSegmentedColormap.from_list("err", ["#fff6ec", "#f8c48f", "#eb6834", "#a8320f", "#4d1300"])
+TEXTWIDTH = 6.5  # inches
+
+
+def draw(fig, ax, cax, X, Z, F, cmap, **kw):
+    """One field on a vertical plane in the axes `ax`, with its colour bar in `cax` (None: no bar)."""
     im = ax.pcolormesh(X, Z, F, cmap=cmap, shading="gouraud", rasterized=True, **kw)
-    cb = fig.colorbar(im, ax=ax, pad=0.03, fraction=0.05)
-    cb.ax.tick_params(labelsize=7, length=2)
-    cb.outline.set_linewidth(0.4)
-    cb.formatter.set_powerlimits((-2, 3))
-    cb.ax.yaxis.get_offset_text().set_fontsize(7)
-    cb.update_ticks()
-    ax.set_title(label, loc="left")
+    if cax is not None:
+        cb = fig.colorbar(im, cax=cax)
+        cb.ax.tick_params(labelsize=7, length=2)
+        cb.outline.set_linewidth(0.4)
+        cb.formatter.set_powerlimits((-2, 3))
+        cb.ax.yaxis.get_offset_text().set_fontsize(7)
+        cb.update_ticks()
     ax.grid(False)
     return im
 
 
 def fig_fields_manufactured():
-    """Exact solution, numerical solution and error on the plane y = pi for the three test problems."""
+    """
+    Exact solution, numerical solution and relative error on the plane y = pi for the three test
+    problems: one row per problem, with a shared z axis in each row and a shared x axis in each column.
+    The error is |p_h - p| / max|p|, whose maximum over the grid is the relative l-infinity error.
+    """
     import manufactured as mf
     from solver import FFTFDSolver
 
     L = 2 * np.pi
     cases = []
-    # (i) constant density, uniform grid
+    # constant density, uniform grid
     x = np.linspace(0, L, 65)
     z = np.linspace(0, L, 65)
     P, _, F = mf.fields(x, x, z, mf.z_thesis, mf.Gaussian2D(np.pi, np.pi, 0.5, 0.5))
     cases.append((x, z, P, FFTFDSolver(x, x, z).solve(F), None, None))
-    # (ii) bottom layer, stretched grid
+    # bottom layer, stretched grid
     xh = np.linspace(0, L, 33)
     zs = stretched_grid(0.0, L, 65, 4.0)
     H = mf.VonMises(L, L, a=2.0)
     P, _, F = mf.fields(xh, xh, zs, lambda Z: mf.z_layer(Z, L, 0.25), H)
     cases.append((xh, zs, P, FFTFDSolver(xh, xh, zs).solve(F), None, 1.6))
-    # (iii) variable density, density ratio 5
+    # variable density, density ratio 5
     P, RHO, F = mf.fields(x, x, z, mf.z_thesis, H, theta=4.0, Zr=lambda Z: mf.z_layer(Z, L, 0.75), Hr=H)
     ph, _ = FFTFDSolver(x, x, z).solve_variable_density(F, RHO, method="gmres", tol=1e-10)
     cases.append((x, z, P, ph, RHO, None))
 
-    fig, axs = plt.subplots(3, 3, figsize=(6.6, 5.9), sharex="col")
-    rows = ["(a)", "(b)", "(c)"]
+    # Layout in figure fractions: three square plot areas per row; the exact and numerical
+    # solutions share one colour bar, the error has its own.
+    w, cbw, gap = 0.235, 0.012, 0.012
+    x1, x2, x3 = 0.06, 0.32, 0.675
+    side = w * TEXTWIDTH                     # plot area side in inches
+    band = side + 0.30                       # row pitch
+    height = 3 * band + 0.38
+    fig = plt.figure(figsize=(TEXTWIDTH, height), layout="none")
     for i, (xc, zc, P, Ph, RHO, zmax) in enumerate(cases):
+        y0 = (0.42 + (2 - i) * band) / height
+        h = side / height
+        ax1, ax2, ax3 = (fig.add_axes([xx, y0, w, h]) for xx in (x1, x2, x3))
+        cax12 = fig.add_axes([x2 + w + gap, y0, cbw, h])
+        cax3 = fig.add_axes([x3 + w + gap, y0, cbw, h])
         j = xc.shape[0] // 2  # plane y = pi
         X, Z = np.meshgrid(xc, zc, indexing="ij")
-        vmin, vmax = min(P[:, j].min(), 0.0), P[:, j].max()
-        panel(fig, axs[i, 0], X, Z, P[:, j], SEQ, rows[i], vmin=vmin, vmax=vmax)
-        panel(fig, axs[i, 1], X, Z, Ph[:, j], SEQ, "", vmin=vmin, vmax=vmax)
-        panel(fig, axs[i, 2], X, Z, Ph[:, j] - P[:, j], DIV, "", symmetric=True)
+        lim = dict(vmin=min(P[:, j].min(), 0.0), vmax=P[:, j].max())
+        draw(fig, ax1, None, X, Z, P[:, j], SEQ, **lim)
+        draw(fig, ax2, cax12, X, Z, Ph[:, j], SEQ, **lim)
+        draw(fig, ax3, cax3, X, Z, np.abs(Ph[:, j] - P[:, j]) / np.abs(P).max(), ERR, vmin=0.0)
         if RHO is not None:
-            cs = axs[i, 0].contour(X, Z, RHO[:, j], levels=[0.3, 0.5, 0.7, 0.9], colors=C[1], linewidths=0.7)
-            axs[i, 0].clabel(cs, fmt="%.1f", fontsize=6)
-        for ax in axs[i]:
-            ax.set_aspect("equal" if zmax is None else "auto")
-            if zmax is not None:
-                ax.set_ylim(0, zmax)
-        axs[i, 0].set_ylabel(r"$z$")
-    for ax in axs[-1]:
-        ax.set_xlabel(r"$x$")
-    fig.tight_layout(w_pad=0.6, h_pad=0.8)
+            cs = ax1.contour(X, Z, RHO[:, j], levels=[0.3, 0.5, 0.7, 0.9], colors=C[1], linewidths=0.7)
+            ax1.clabel(cs, fmt="%.1f", fontsize=6)
+        for ax in (ax1, ax2, ax3):
+            ax.set_xlim(0, L)
+            ax.set_ylim(0, L if zmax is None else zmax)
+            ax.set_xticks([0, 2, 4, 6])
+            if i < len(cases) - 1:
+                ax.set_xticklabels([])
+            else:
+                ax.set_xlabel(r"$x$")
+        for ax in (ax2, ax3):
+            ax.set_yticklabels([])
+        ax1.set_ylabel(r"$z$")
     save(fig, "fields_manufactured")
 
 
@@ -272,27 +295,38 @@ def fds_snapshot(t_target=6.2):
 
 
 def fig_fds_fields():
+    """Temperature, density and pressure on one canvas, with a shared z axis."""
     d = fds_snapshot()
     n = d["density"].shape[0]
     c = (np.arange(n) + 0.5) * 1.92 / n  # cell centres
     X, Z = np.meshgrid(c, c, indexing="ij")
-    fig, axs = plt.subplots(1, 3, figsize=(6.6, 2.35), sharey=True)
-    panel(fig, axs[0], X, Z, d["temperature"], HEAT, "(a)")
-    panel(fig, axs[1], X, Z, d["density"], SEQ, "(b)")
-    panel(fig, axs[2], X, Z, d["pressure"], DIV, "(c)", symmetric=True)
-    for ax in axs:
-        ax.set_aspect("equal")
+    w, cbw, gap = 0.215, 0.012, 0.012
+    side = w * TEXTWIDTH
+    height = side + 0.62
+    fig = plt.figure(figsize=(TEXTWIDTH, height), layout="none")
+    m = np.abs(d["pressure"]).max()
+    panels = [(d["temperature"], "hot", {}), (d["density"], SEQ, {}), (d["pressure"], DIV, dict(vmin=-m, vmax=m))]
+    for i, (F, cmap, kw) in enumerate(panels):
+        x0 = 0.065 + i * 0.315
+        ax = fig.add_axes([x0, 0.40 / height, w, side / height])
+        cax = fig.add_axes([x0 + w + gap, 0.40 / height, cbw, side / height])
+        draw(fig, ax, cax, X, Z, F, cmap, **kw)
+        ax.set_xlim(0, 1.92)
+        ax.set_ylim(0, 1.92)
+        ax.set_xticks([0, 0.5, 1.0, 1.5])
+        ax.set_yticks([0, 0.5, 1.0, 1.5])
         ax.set_xlabel(r"$x$ (m)")
-    axs[0].set_ylabel(r"$z$ (m)")
-    fig.tight_layout(w_pad=0.6)
+        if i == 0:
+            ax.set_ylabel(r"$z$ (m)")
+        else:
+            ax.set_yticklabels([])
     save(fig, "fds_fields")
 
 
 def fig_fds_iterations():
     r = json.load(open(os.path.join(HERE, "paper", "data", "fds_replay.json")))
     t = np.array(r["times"])
-    fig, axs = plt.subplots(1, 2, figsize=(6.6, 2.7))
-    ax = axs[0]
+    fig, ax = new(HALF)
     series = [("poisson/picard/cold/1e-06", "FP, cold", C[0], "-"), ("poisson/picard/warm/1e-06", "FP, warm", C[0], ":"),
               ("poisson/gmres/cold/1e-06", "GMRES, cold", C[1], "-"), ("poisson/gmres/warm/1e-06", "GMRES, warm", C[1], ":")]
     for key, label, col, ls in series:
@@ -303,23 +337,23 @@ def fig_fds_iterations():
     ax.set_ylim(0, 24)
     ax.set_xlabel(r"time (s)")
     ax.set_ylabel("iterations per time step")
-    ax.set_title("(a)", loc="left")
     ax.legend(loc="upper center", ncol=2, fontsize=7, columnspacing=1.2, handlelength=1.8)
-    ax = axs[1]
+    save(fig, "fds_iterations")
+
+    fig, ax = new(HALF)
     ax.semilogy(t[1:], r["lagged_error"], "-", color=C[1], lw=1.1, label="error after one lagged sweep")
     ax.semilogy(t[1:], r["step_change"], "-", color=C[0], lw=1.1, label="pressure change per time step")
     ax.set_ylim(1e-2, 30)
     ax.set_xlabel(r"time (s)")
     ax.set_ylabel("relative difference")
-    ax.set_title("(b)", loc="left")
     ax.legend(loc="upper center", fontsize=7, handlelength=1.8)
-    fig.tight_layout(w_pad=1.5)
-    save(fig, "fds_iterations")
+    save(fig, "fds_lagged")
 
 
 if __name__ == "__main__":
     import sys
     if "fds" in sys.argv[1:]:
+        fig_fds_fields()
         fig_fds_iterations()
         sys.exit()
     fig_convergence()

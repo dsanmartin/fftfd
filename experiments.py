@@ -247,9 +247,7 @@ def timed_solve(x, y, z, F, threads, repeats=3):
 
 
 def exp_perf():
-    import matplotlib
-    matplotlib.use("Agg")
-    from legacy.fftfd import fftfd as fftfd_loop  # original implementation: Python loop over the modes
+    from fftfd_original import fftfd as fftfd_loop  # original implementation: Python loop over the modes
 
     out = {"machine": platform.processor() + " " + platform.machine(), "max_threads": MAX_THREADS,
            "N": [33, 65, 129, 257, 513], "loop": [], "vector_1": [], "vector_all": []}

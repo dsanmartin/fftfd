@@ -3,7 +3,3 @@ numpy
 scipy>=1.12        # gmres(rtol=...) was added in 1.12
 numba
 matplotlib
-
-# Only for the notebooks in legacy/:
-# ipykernel
-# ipywidgets

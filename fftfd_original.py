@@ -1,6 +1,30 @@
+"""
+Original FFT-FD implementation, by Daniel San Martin.
+
+This is the base code developed for the PhD thesis (doi:10.71959/k76w-qn05) and first published in
+this repository; the constant-density solver is also in src/pressure.py of
+https://github.com/dsanmartin/wildfire. The functions below are copied verbatim from the original
+sources and are kept for provenance and comparison:
+
+    thomas_algorithm, fftfd     constant density, uniform grid            (fftfd.py)
+    fftfd_non_uniform_z         constant density, non-uniform vertical grid (fftfd.py)
+    solve_iterative             variable density, fixed-point iteration   (analysis_density.ipynb)
+
+Status: the three solvers are correct. solver.py reproduces `fftfd` and `fftfd_non_uniform_z` to
+round-off, and `solve_iterative` to discretization accuracy (it differences the density term with
+np.gradient, one-sided at the lateral ends, where solver.py uses periodic differences).
+experiments.py uses `fftfd` as the timing baseline of the paper, and smoke_test.py checks
+solver.py against all three.
+
+Limitations of the original code, left as they were: the domain must start at 0 (the wavenumbers
+use x[-1] as the domain length); `solve_iterative` requires a uniform vertical grid, and prints
+nothing unless log=True; its default tolerance is on the absolute change of p in the infinity norm.
+
+For new work use solver.py, a batched, multithreaded rewrite that adds the non-zero boundary data,
+the GMRES iteration and the stratified operator.
+"""
 import numpy as np
 import numba
-import matplotlib.pyplot as plt
 
 @numba.jit(nopython=True)
 def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray) -> np.ndarray:
@@ -116,6 +140,9 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
     p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
     return p
 
+# ---------------------------------------------------------------------------------------
+# Non-uniform vertical grid (verbatim from fftfd.py)
+# ---------------------------------------------------------------------------------------
 def fftfd_non_uniform_z(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
     """
     Compute the 3D Poisson equation using the FFT2D-FD method.
@@ -189,139 +216,24 @@ def fftfd_non_uniform_z(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarr
     p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
     return p
 
-def fftfd_density_a(f: np.ndarray, rho:np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
-    """
-    Compute the 3D Poisson equation using the FFT2D-FD method.
-    FFT2D for x-direction, y-direction and central finite differences for z-direction.
-
-    Parameters
-    ----------
-    f : array_like
-        Input array of shape (Nx, Ny, Nz) containing the right-hand side of the Poisson equation.
-    rho: array_like
-        Array of shape (Nx, Ny, Nz) containing the density of the fluid.
-    x : array_like
-        Array of shape (Nx,) containing the x coordinates.
-    y : array_like
-        Array of shape (Ny,) containing the y coordinates.
-    z : array_like
-        Array of shape (Nz,) containing the z coordinates.
-
-    Returns
-    -------
-    ndarray (Nx, Ny, Nz)
-        Approximation of the Poisson equation.
-    """
-    Nx, Ny, Nz = x.shape[0], y.shape[0], z.shape[0]
+# ---------------------------------------------------------------------------------------
+# Variable density: fixed-point iteration (verbatim from analysis_density.ipynb)
+# ---------------------------------------------------------------------------------------
+def solve_iterative(x, y, z, p0, rho, f, tol=1e-14, max_iter=20, log=False):
     dx, dy, dz = x[1] - x[0], y[1] - y[0], z[1] - z[0]
-    x_max = x[-1] # Max x value
-    y_max = y[-1] # Max y value
-    p_top = np.zeros((Nx, Ny)) # Top boundary condition
-    F = f[:-1, :-1, :-1] # Removing boundaries and top boundary condition
-    rr = np.fft.fftfreq(Nx - 1) * (Nx - 1) 
-    ss = np.fft.fftfreq(Ny - 1) * (Ny - 1) 
-    # Scale frequencies for any domain
-    kx = 2 * np.pi * rr * 1j / x_max
-    ky = 2 * np.pi * ss * 1j / y_max
-    # Compute FFT in x direction (column-wise)
-    F_k = np.fft.fft2(F, axes=(0, 1))
-    P_k = np.zeros_like(F_k)
-    # Compute gradient of density
-    rho_x = np.gradient(rho, dx, axis=0, edge_order=2)
-    rho_y = np.gradient(rho, dy, axis=1, edge_order=2)
-    rho_z = np.gradient(rho, dz, axis=2, edge_order=2)
-    # Remove boundaries and top boundary
-    # rho_bk = rho
-    rho = rho[:,:, 1:-1]
-    rho_x = rho_x[:,:,1:-1]
-    rho_y = rho_y[:,:,1:-1]
-    rho_z = rho_z[:,:,1:-1]
-    # Compute FFT in the last row (top boundary condition)
-    P_kNz = np.fft.fft2(p_top, axes=(0, 1))
-    b = np.zeros(Nz - 1, dtype=np.complex128)
-    c = np.zeros(Nz - 2, dtype=np.complex128)
-    # Solve the system for each gamma
-    for r in range(Nx - 1):
-        for s in range(Ny - 1):
-            # Compute gammas
-            gamma_right = 1 / dz ** 2 - rho_z[r, s] / (2 * rho[r, s] * dz) + 0 * 1j
-            gamma_left  = 1 / dz ** 2 + rho_z[r, s] / (2 * rho[r, s] * dz) + 0 * 1j
-            gamma_rs = kx[r] ** 2 + ky[s] ** 2 - 2 / dz ** 2 - (kx[r] * rho_x[r, s] + ky[s] * rho_y[r, s]) / rho[r, s]
-            # Create RHS of system
-            F_k[r, s, 0] = dz * 0 + 0.5 * F_k[r, s, 1] / gamma_right[0] # dp/dz = 0
-            # Substract coefficient of top boundary condition
-            F_k[r, s, -1] -=  P_kNz[r, s] * gamma_right[-1]
-            # Create A in the system. Only keep diagonals of matrix
-            a = gamma_left
-            b[1:] = gamma_rs
-            c[1:] = gamma_right[:-1]
-            # Fix first coefficients
-            b[0] = 0.5 * gamma_left[0] / gamma_right[0] - 1.5
-            c[0] = 2 + 0.5 * gamma_rs[0] / gamma_right[0]
-            # up = 4 * rho_bk[r, s, 1] + rho_bk[r, s, 2] - rho_bk[r, s, 0]
-            # do = 4 * rho_bk[r, s, 1] + rho_bk[r, s, 0] - rho_bk[r, s, 2]
-            # b[0] = 0.5 * up / do - 1.5
-            # tmp1 = gamma_left[0] / gamma_right[0]
-            # tmp2 = up / do
-            # err_tmp = np.abs(tmp1 - tmp2)
-            # if err_tmp > 1e-10:
-            #     print(tmp1, tmp2, err_tmp)
-            # print(a.shape, b.shape, c.shape, gamma_left.shape, gamma_right.shape, gamma_rs.shape)
-            # Solve system A P_k = F_k
-            P_k[r, s, :] = thomas_algorithm(a, b, c, F_k[r, s, :])
-    # Compute IFFT in x-y slices to restore the 'physical' pressure
-    p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
-    # Add x boundary condition
-    p = np.concatenate([p, np.expand_dims(p[0], axis=0)], axis=0)
-    # Add y boundary condition
-    p = np.concatenate([p, np.expand_dims(p[:, 0], axis=1)], axis=1)
-    # Add top boundary condition
-    p = np.concatenate([p, np.expand_dims(p_top, axis=2)], axis=2)
+    for m in range(1, max_iter+1):
+        px = np.gradient(p0, dx, axis=0, edge_order=2)
+        py = np.gradient(p0, dy, axis=1, edge_order=2)
+        pz = np.gradient(p0, dz, axis=2, edge_order=2)
+        rhox = np.gradient(rho, dx, axis=0, edge_order=2)
+        rhoy = np.gradient(rho, dy, axis=1, edge_order=2)
+        rhoz = np.gradient(rho, dz, axis=2, edge_order=2)
+        f_new = f + (rhox * px + rhoy * py + rhoz * pz) / rho 
+        p = fftfd(f_new, x, y, z)
+        error = np.linalg.norm(p.flatten() - p0.flatten(), np.inf)
+        p0 = p.copy()
+        if log:
+            print("m = %d, error = %.e" % (m, error))
+        if error < tol:        
+            break
     return p
-
-def plot(x: np.ndarray, y: np.ndarray, z: np.ndarray, f: np.ndarray, title: str = None, i: int = None, j: int = None, k: int = None) -> None:
-    """
-    Plot a 3D scalar field using contour plots.
-
-    Parameters
-    ----------
-    x : np.ndarray (Nx,)
-        Array of x-coordinates.
-    y : np.ndarray (Ny,)
-        Array of y-coordinates.
-    z : np.ndarray (Nz,)
-        Array of z-coordinates.
-    f : np.ndarray (Nx, Ny, Nz)
-        3D scalar field.
-
-    Returns
-    -------
-    None
-        This function does not return anything.
-    """
-    # Get the indices of the middle of the domain to plot
-    if i is None: i = x.shape[0] // 2
-    if j is None: j = y.shape[0] // 2
-    if k is None: k = z.shape[0] // 2
-    fig, ax = plt.subplots(1, 3, figsize=(14, 5))
-    c1 = ax[0].contourf(x, y, f[:, :, k].T)
-    c2 = ax[1].contourf(x, z, f[:, j, :].T)
-    c3 = ax[2].contourf(y, z, f[i, :, :].T)
-    ax[0].set_xlabel(r'$x$')
-    ax[0].set_ylabel(r'$y$')
-    ax[1].set_xlabel(r'$x$')
-    ax[1].set_ylabel(r'$z$')
-    ax[2].set_xlabel(r'$y$')
-    ax[2].set_ylabel(r'$z$')
-    ax[0].set_title(r'$f(x, y, {:.2f})$'.format(z[k]))
-    ax[1].set_title(r'$f(x, {:.2f}, z)$'.format(y[j]))
-    ax[2].set_title(r'$f({:.2f}, y, z)$'.format(x[i]))
-    fig.colorbar(c1, ax=ax[0])
-    fig.colorbar(c2, ax=ax[1])
-    fig.colorbar(c3, ax=ax[2])
-    if title is not None:
-        fig.suptitle(title)
-    plt.tight_layout()
-    plt.show()
-    return None
-    
