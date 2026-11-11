@@ -1,0 +1,271 @@
+&HEAD CHID='flame_periodic_mpi', TITLE='Propane burner in a horizontally periodic box: input for the FFT-FD pressure-solver replay' /
+
+! ---------------------------------------------------------------------------------------------
+! Mesh. Same 64 x 64 x 64 grid of 3 cm cells, split into 8 meshes of 32^3 for MPI (run_mpi.sh).
+! The pressure is solved mesh by mesh and matched at the interfaces to a tolerance.
+! Larger alternative (about 4x the cost):  IJK=128,128,64, XB=0.0,3.84,0.0,3.84,0.0,1.92
+! and move the burner to XB=1.77,2.07,1.77,2.07,0.0,0.0
+! ---------------------------------------------------------------------------------------------
+&MULT ID='split', DX=0.96, DY=0.96, DZ=0.96, I_UPPER=1, J_UPPER=1, K_UPPER=1 /
+&MESH IJK=32,32,32, XB=0.0,0.96,0.0,0.96,0.0,0.96, MULT_ID='split' /
+
+! Fixed time step, so that the 3D output below is written at consecutive time steps.
+! If the run stops with a numerical instability, reduce DT (and the spacing of the RAMP times).
+&TIME T_END=6.400, DT=0.002, LOCK_TIME_STEP=.TRUE. /
+
+! ---------------------------------------------------------------------------------------------
+! Boundaries: periodic sides, open top, solid floor (default).
+! ---------------------------------------------------------------------------------------------
+&VENT PBX=0.0,  SURF_ID='PERIODIC' /
+&VENT PBX=1.92, SURF_ID='PERIODIC' /
+&VENT PBY=0.0,  SURF_ID='PERIODIC' /
+&VENT PBY=1.92, SURF_ID='PERIODIC' /
+&VENT MB='ZMAX', SURF_ID='OPEN' /
+
+! ---------------------------------------------------------------------------------------------
+! Fire: 0.30 m x 0.30 m propane burner on the floor, 60 kW (HRRPUA = 60 / 0.09)
+! ---------------------------------------------------------------------------------------------
+&REAC FUEL='PROPANE', SOOT_YIELD=0.01 /
+&SURF ID='BURNER', HRRPUA=666.7, COLOR='RED' /
+&VENT XB=0.81,1.11,0.81,1.11,0.0,0.0, SURF_ID='BURNER' /
+
+! ---------------------------------------------------------------------------------------------
+! Output: cell-centred 3D fields at t = 2 s and 4 s, and at every time step from
+! t = 6.0 s to 6.4 s (201 consecutive steps).
+! Size: about 1 MB per field and frame, roughly 0.7 GB in total.
+! ---------------------------------------------------------------------------------------------
+&DUMP RAMP_SL3D='slcf times', DT_SLCF=0.02, DT_HRR=0.1 /
+
+&SLCF XB=0.0,1.92,0.0,1.92,0.0,1.92, QUANTITY='DENSITY',     CELL_CENTERED=.TRUE. /
+&SLCF XB=0.0,1.92,0.0,1.92,0.0,1.92, QUANTITY='PRESSURE',    CELL_CENTERED=.TRUE. /
+&SLCF XB=0.0,1.92,0.0,1.92,0.0,1.92, QUANTITY='TEMPERATURE', CELL_CENTERED=.TRUE. /
+
+! 2D slices for visualization in Smokeview, every 0.02 s (DT_SLCF): planes through the burner
+! centre (x = 0.96 m, y = 0.96 m) and a horizontal plane at z = 0.30 m.
+&SLCF PBX=0.96, QUANTITY='TEMPERATURE' /
+&SLCF PBX=0.96, QUANTITY='DENSITY' /
+&SLCF PBX=0.96, QUANTITY='PRESSURE' /
+&SLCF PBX=0.96, QUANTITY='H' /
+&SLCF PBX=0.96, QUANTITY='DIVERGENCE' /
+&SLCF PBX=0.96, QUANTITY='HRRPUV' /
+&SLCF PBX=0.96, QUANTITY='VELOCITY', VECTOR=.TRUE. /
+&SLCF PBY=0.96, QUANTITY='TEMPERATURE' /
+&SLCF PBY=0.96, QUANTITY='DENSITY' /
+&SLCF PBY=0.96, QUANTITY='PRESSURE' /
+&SLCF PBY=0.96, QUANTITY='H' /
+&SLCF PBY=0.96, QUANTITY='DIVERGENCE' /
+&SLCF PBY=0.96, QUANTITY='HRRPUV' /
+&SLCF PBY=0.96, QUANTITY='VELOCITY', VECTOR=.TRUE. /
+&SLCF PBZ=0.30, QUANTITY='TEMPERATURE' /
+&SLCF PBZ=0.30, QUANTITY='DENSITY' /
+&SLCF PBZ=0.30, QUANTITY='PRESSURE' /
+&SLCF PBZ=0.30, QUANTITY='H' /
+&SLCF PBZ=0.30, QUANTITY='DIVERGENCE' /
+&SLCF PBZ=0.30, QUANTITY='HRRPUV' /
+&SLCF PBZ=0.30, QUANTITY='VELOCITY', VECTOR=.TRUE. /
+
+&RAMP ID='slcf times', T=2.000 /
+&RAMP ID='slcf times', T=4.000 /
+&RAMP ID='slcf times', T=6.000 /
+&RAMP ID='slcf times', T=6.002 /
+&RAMP ID='slcf times', T=6.004 /
+&RAMP ID='slcf times', T=6.006 /
+&RAMP ID='slcf times', T=6.008 /
+&RAMP ID='slcf times', T=6.010 /
+&RAMP ID='slcf times', T=6.012 /
+&RAMP ID='slcf times', T=6.014 /
+&RAMP ID='slcf times', T=6.016 /
+&RAMP ID='slcf times', T=6.018 /
+&RAMP ID='slcf times', T=6.020 /
+&RAMP ID='slcf times', T=6.022 /
+&RAMP ID='slcf times', T=6.024 /
+&RAMP ID='slcf times', T=6.026 /
+&RAMP ID='slcf times', T=6.028 /
+&RAMP ID='slcf times', T=6.030 /
+&RAMP ID='slcf times', T=6.032 /
+&RAMP ID='slcf times', T=6.034 /
+&RAMP ID='slcf times', T=6.036 /
+&RAMP ID='slcf times', T=6.038 /
+&RAMP ID='slcf times', T=6.040 /
+&RAMP ID='slcf times', T=6.042 /
+&RAMP ID='slcf times', T=6.044 /
+&RAMP ID='slcf times', T=6.046 /
+&RAMP ID='slcf times', T=6.048 /
+&RAMP ID='slcf times', T=6.050 /
+&RAMP ID='slcf times', T=6.052 /
+&RAMP ID='slcf times', T=6.054 /
+&RAMP ID='slcf times', T=6.056 /
+&RAMP ID='slcf times', T=6.058 /
+&RAMP ID='slcf times', T=6.060 /
+&RAMP ID='slcf times', T=6.062 /
+&RAMP ID='slcf times', T=6.064 /
+&RAMP ID='slcf times', T=6.066 /
+&RAMP ID='slcf times', T=6.068 /
+&RAMP ID='slcf times', T=6.070 /
+&RAMP ID='slcf times', T=6.072 /
+&RAMP ID='slcf times', T=6.074 /
+&RAMP ID='slcf times', T=6.076 /
+&RAMP ID='slcf times', T=6.078 /
+&RAMP ID='slcf times', T=6.080 /
+&RAMP ID='slcf times', T=6.082 /
+&RAMP ID='slcf times', T=6.084 /
+&RAMP ID='slcf times', T=6.086 /
+&RAMP ID='slcf times', T=6.088 /
+&RAMP ID='slcf times', T=6.090 /
+&RAMP ID='slcf times', T=6.092 /
+&RAMP ID='slcf times', T=6.094 /
+&RAMP ID='slcf times', T=6.096 /
+&RAMP ID='slcf times', T=6.098 /
+&RAMP ID='slcf times', T=6.100 /
+&RAMP ID='slcf times', T=6.102 /
+&RAMP ID='slcf times', T=6.104 /
+&RAMP ID='slcf times', T=6.106 /
+&RAMP ID='slcf times', T=6.108 /
+&RAMP ID='slcf times', T=6.110 /
+&RAMP ID='slcf times', T=6.112 /
+&RAMP ID='slcf times', T=6.114 /
+&RAMP ID='slcf times', T=6.116 /
+&RAMP ID='slcf times', T=6.118 /
+&RAMP ID='slcf times', T=6.120 /
+&RAMP ID='slcf times', T=6.122 /
+&RAMP ID='slcf times', T=6.124 /
+&RAMP ID='slcf times', T=6.126 /
+&RAMP ID='slcf times', T=6.128 /
+&RAMP ID='slcf times', T=6.130 /
+&RAMP ID='slcf times', T=6.132 /
+&RAMP ID='slcf times', T=6.134 /
+&RAMP ID='slcf times', T=6.136 /
+&RAMP ID='slcf times', T=6.138 /
+&RAMP ID='slcf times', T=6.140 /
+&RAMP ID='slcf times', T=6.142 /
+&RAMP ID='slcf times', T=6.144 /
+&RAMP ID='slcf times', T=6.146 /
+&RAMP ID='slcf times', T=6.148 /
+&RAMP ID='slcf times', T=6.150 /
+&RAMP ID='slcf times', T=6.152 /
+&RAMP ID='slcf times', T=6.154 /
+&RAMP ID='slcf times', T=6.156 /
+&RAMP ID='slcf times', T=6.158 /
+&RAMP ID='slcf times', T=6.160 /
+&RAMP ID='slcf times', T=6.162 /
+&RAMP ID='slcf times', T=6.164 /
+&RAMP ID='slcf times', T=6.166 /
+&RAMP ID='slcf times', T=6.168 /
+&RAMP ID='slcf times', T=6.170 /
+&RAMP ID='slcf times', T=6.172 /
+&RAMP ID='slcf times', T=6.174 /
+&RAMP ID='slcf times', T=6.176 /
+&RAMP ID='slcf times', T=6.178 /
+&RAMP ID='slcf times', T=6.180 /
+&RAMP ID='slcf times', T=6.182 /
+&RAMP ID='slcf times', T=6.184 /
+&RAMP ID='slcf times', T=6.186 /
+&RAMP ID='slcf times', T=6.188 /
+&RAMP ID='slcf times', T=6.190 /
+&RAMP ID='slcf times', T=6.192 /
+&RAMP ID='slcf times', T=6.194 /
+&RAMP ID='slcf times', T=6.196 /
+&RAMP ID='slcf times', T=6.198 /
+&RAMP ID='slcf times', T=6.200 /
+&RAMP ID='slcf times', T=6.202 /
+&RAMP ID='slcf times', T=6.204 /
+&RAMP ID='slcf times', T=6.206 /
+&RAMP ID='slcf times', T=6.208 /
+&RAMP ID='slcf times', T=6.210 /
+&RAMP ID='slcf times', T=6.212 /
+&RAMP ID='slcf times', T=6.214 /
+&RAMP ID='slcf times', T=6.216 /
+&RAMP ID='slcf times', T=6.218 /
+&RAMP ID='slcf times', T=6.220 /
+&RAMP ID='slcf times', T=6.222 /
+&RAMP ID='slcf times', T=6.224 /
+&RAMP ID='slcf times', T=6.226 /
+&RAMP ID='slcf times', T=6.228 /
+&RAMP ID='slcf times', T=6.230 /
+&RAMP ID='slcf times', T=6.232 /
+&RAMP ID='slcf times', T=6.234 /
+&RAMP ID='slcf times', T=6.236 /
+&RAMP ID='slcf times', T=6.238 /
+&RAMP ID='slcf times', T=6.240 /
+&RAMP ID='slcf times', T=6.242 /
+&RAMP ID='slcf times', T=6.244 /
+&RAMP ID='slcf times', T=6.246 /
+&RAMP ID='slcf times', T=6.248 /
+&RAMP ID='slcf times', T=6.250 /
+&RAMP ID='slcf times', T=6.252 /
+&RAMP ID='slcf times', T=6.254 /
+&RAMP ID='slcf times', T=6.256 /
+&RAMP ID='slcf times', T=6.258 /
+&RAMP ID='slcf times', T=6.260 /
+&RAMP ID='slcf times', T=6.262 /
+&RAMP ID='slcf times', T=6.264 /
+&RAMP ID='slcf times', T=6.266 /
+&RAMP ID='slcf times', T=6.268 /
+&RAMP ID='slcf times', T=6.270 /
+&RAMP ID='slcf times', T=6.272 /
+&RAMP ID='slcf times', T=6.274 /
+&RAMP ID='slcf times', T=6.276 /
+&RAMP ID='slcf times', T=6.278 /
+&RAMP ID='slcf times', T=6.280 /
+&RAMP ID='slcf times', T=6.282 /
+&RAMP ID='slcf times', T=6.284 /
+&RAMP ID='slcf times', T=6.286 /
+&RAMP ID='slcf times', T=6.288 /
+&RAMP ID='slcf times', T=6.290 /
+&RAMP ID='slcf times', T=6.292 /
+&RAMP ID='slcf times', T=6.294 /
+&RAMP ID='slcf times', T=6.296 /
+&RAMP ID='slcf times', T=6.298 /
+&RAMP ID='slcf times', T=6.300 /
+&RAMP ID='slcf times', T=6.302 /
+&RAMP ID='slcf times', T=6.304 /
+&RAMP ID='slcf times', T=6.306 /
+&RAMP ID='slcf times', T=6.308 /
+&RAMP ID='slcf times', T=6.310 /
+&RAMP ID='slcf times', T=6.312 /
+&RAMP ID='slcf times', T=6.314 /
+&RAMP ID='slcf times', T=6.316 /
+&RAMP ID='slcf times', T=6.318 /
+&RAMP ID='slcf times', T=6.320 /
+&RAMP ID='slcf times', T=6.322 /
+&RAMP ID='slcf times', T=6.324 /
+&RAMP ID='slcf times', T=6.326 /
+&RAMP ID='slcf times', T=6.328 /
+&RAMP ID='slcf times', T=6.330 /
+&RAMP ID='slcf times', T=6.332 /
+&RAMP ID='slcf times', T=6.334 /
+&RAMP ID='slcf times', T=6.336 /
+&RAMP ID='slcf times', T=6.338 /
+&RAMP ID='slcf times', T=6.340 /
+&RAMP ID='slcf times', T=6.342 /
+&RAMP ID='slcf times', T=6.344 /
+&RAMP ID='slcf times', T=6.346 /
+&RAMP ID='slcf times', T=6.348 /
+&RAMP ID='slcf times', T=6.350 /
+&RAMP ID='slcf times', T=6.352 /
+&RAMP ID='slcf times', T=6.354 /
+&RAMP ID='slcf times', T=6.356 /
+&RAMP ID='slcf times', T=6.358 /
+&RAMP ID='slcf times', T=6.360 /
+&RAMP ID='slcf times', T=6.362 /
+&RAMP ID='slcf times', T=6.364 /
+&RAMP ID='slcf times', T=6.366 /
+&RAMP ID='slcf times', T=6.368 /
+&RAMP ID='slcf times', T=6.370 /
+&RAMP ID='slcf times', T=6.372 /
+&RAMP ID='slcf times', T=6.374 /
+&RAMP ID='slcf times', T=6.376 /
+&RAMP ID='slcf times', T=6.378 /
+&RAMP ID='slcf times', T=6.380 /
+&RAMP ID='slcf times', T=6.382 /
+&RAMP ID='slcf times', T=6.384 /
+&RAMP ID='slcf times', T=6.386 /
+&RAMP ID='slcf times', T=6.388 /
+&RAMP ID='slcf times', T=6.390 /
+&RAMP ID='slcf times', T=6.392 /
+&RAMP ID='slcf times', T=6.394 /
+&RAMP ID='slcf times', T=6.396 /
+&RAMP ID='slcf times', T=6.398 /
+&RAMP ID='slcf times', T=6.400 /
+
+&TAIL /

@@ -1,4 +1,5 @@
 import numpy as np
+import multiprocessing as mp
 import matplotlib.pyplot as plt
 
 def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray) -> np.ndarray:
@@ -49,7 +50,24 @@ def thomas_algorithm(a: np.ndarray, b: np.ndarray, c: np.ndarray, f: np.ndarray)
         u[k-1] = (y[k-1] - c[k] * u[k]) / v[k-1]
     return u
 
-def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndarray:
+def solve_system(r, s, kx, ky, dz, F_k, P_kNz, Nz):
+    # Compute gamma
+    gamma_rs = - 2 - kx[r] ** 2 - ky[s] ** 2
+    # Create RHS of system
+    F_k[r, s, 0] = 0 + 0.5 * dz * F_k[r, s, 1] # dp/dy = 0
+    # Substract coefficient of top boundary condition
+    F_k[r, s, -1] -=  P_kNz[r, s] / dz ** 2 
+    # Create A in the system. Only keep diagonals of matrix
+    a = np.ones(Nz - 2) / dz ** 2
+    b = np.ones(Nz - 1) * gamma_rs / dz ** 2
+    c = np.ones(Nz - 2) / dz ** 2
+    # Fix first coefficients
+    c[0] = (2 + 0.5 * gamma_rs) / dz
+    b[0] = -1 / dz
+    # Solve system A P_k = F_k
+    return thomas_algorithm(a, b, c, F_k[r, s, :])
+
+def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray, proc: int = 1) -> np.ndarray:
     """
     Compute the 3D Poisson equation using the FFT2D-FD method.
     FFT2D for x-direction, y-direction and central finite differences for z-direction.
@@ -87,23 +105,18 @@ def fftfd(f: np.ndarray, x: np.ndarray, y: np.ndarray, z: np.ndarray) -> np.ndar
     # Compute FFT in the last row (top boundary condition)
     P_kNz = np.fft.fft2(p_top, axes=(0, 1))
     # Solve the system for each gamma
-    for r in range(Nx - 1):
-        for s in range(Ny - 1):
-            # Compute gamma
-            gamma_rs = - 2 - kx[r] ** 2 - ky[s] ** 2
-            # Create RHS of system
-            F_k[r, s, 0] = 0 + 0.5 * dz * F_k[r, s, 1] # dp/dy = 0
-            # Substract coefficient of top boundary condition
-            F_k[r, s, -1] -=  P_kNz[r, s] / dz ** 2 
-            # Create A in the system. Only keep diagonals of matrix
-            a = np.ones(Nz - 2) / dz ** 2
-            b = np.ones(Nz - 1) * gamma_rs / dz ** 2
-            c = np.ones(Nz - 2) / dz ** 2
-            # Fix first coefficients
-            c[0] = (2 + 0.5 * gamma_rs) / dz
-            b[0] = -1 / dz
-            # Solve system A P_k = F_k
-            P_k[r, s, :] = thomas_algorithm(a, b, c, F_k[r, s, :])
+    if proc > 1:
+        # Create a Pool of worker processes.
+        pool = mp.Pool(proc)
+        # Use the starmap function of the Pool to apply the function defined in step 2 to each pair of indices (r, s).
+        args = [(r, s, kx, ky, dz, F_k, P_kNz, Nz) for r in range(Nx - 1) for s in range(Ny - 1)]
+        results = pool.starmap(solve_system, args)
+        # Collect the results and reshape them to match the original shape of P_k.
+        P_k = np.array(results).reshape(Nx - 1, Ny - 1, -1)
+    else:
+        for r in range(Nx - 1):
+            for s in range(Ny - 1):
+                P_k[r, s, :] = solve_system(r, s, kx, ky, dz, F_k, P_kNz, Nz)
     # Compute IFFT in x-y slices to restore the 'physical' pressure
     p = np.real(np.fft.ifft2(P_k, axes=(0, 1)))
     # Add x boundary condition
