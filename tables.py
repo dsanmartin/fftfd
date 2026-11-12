@@ -135,6 +135,25 @@ def tab_fds():
     write("fds", rows)
 
 
+def tab_divform():
+    d = R.get("divform")
+    if d is None:
+        return
+    rows = [r"\begin{tabular}{rrcccccc}", r"\toprule",
+            r" & & \multicolumn{3}{c}{Form $\nabla\ln\rho\cdot\nabla p$} & \multicolumn{3}{c}{Divergence form \eqref{eq:divergence-form}} \\",
+            r"\cmidrule(lr){3-5} \cmidrule(lr){6-8}",
+            r"$\rho_{\max}/\rho_{\min}$ & $L_z/H_\rho$ & FP & GMRES & $\ell_2$ error & FP & GMRES & $\ell_2$ error \\", r"\midrule"]
+    cap = d["max_iter"]
+    it = lambda v: "%d" % v["iterations"] if v["converged"] else "n.c."
+    for c in d["cases"]:
+        err = lambda f: next((sci(c[f + "/" + m]["error_l2"], 1) for m in ["gmres", "picard"] if c[f + "/" + m]["converged"]), "--")
+        ratio = "%d" % round(c["ratio"]) if c["ratio"] < 1e3 else sci(c["ratio"], 1)
+        rows.append("%s & %g & %s & %s & %s & %s & %s & %s \\\\" % (ratio, c["LzHs"], it(c["log/picard"]), it(c["log/gmres"]), err("log"),
+                                                                 it(c["divergence/picard"]), it(c["divergence/gmres"]), err("divergence")))
+    rows += [r"\bottomrule", r"\end{tabular}"]
+    write("divform", rows)
+
+
 def numbers():
     """Timing numbers quoted in the text, as LaTeX macros (timings change slightly from run to run)."""
     p = R["perf"]
@@ -166,7 +185,7 @@ def numbers():
 
 
 if __name__ == "__main__":
-    tab_const(); tab_thomas(); tab_nonuniform(); tab_vd(); tab_strat(); tab_perf(); tab_fds()
+    tab_const(); tab_thomas(); tab_nonuniform(); tab_vd(); tab_strat(); tab_perf(); tab_fds(); tab_divform()
     for k, v in numbers().items():
         print("  %-16s %s" % (k, v))
     print("tables written to", TAB)

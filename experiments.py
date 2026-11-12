@@ -4,7 +4,7 @@ Numerical experiments for the paper. Writes paper/data/results.json.
     python experiments.py            # everything
     python experiments.py vd perf    # only the selected groups
 
-Groups: const, nonuniform, vd, perf.
+Groups: const, nonuniform, vd, divform, perf.
 """
 import json
 import os
@@ -222,6 +222,27 @@ def exp_vd():
 
 
 # ---------------------------------------------------------------------------------------
+def exp_divform():
+    """The paper's form (grad log rho) against the divergence-form splitting of Dong and Shen, both iterated."""
+    out = {"N": 64, "cases": [], "max_iter": 2000}
+    cases = [(t, 0.0) for t in [1.0, 4.0, 9.0, 30.0, 100.0]] + [(4.0, s) for s in [2.0, 5.0, 10.0, 15.0]]
+    for theta, s in cases:
+        x, y, z, P, RHO, F = vd_problem(out["N"] + 1, theta, strat=s / L)
+        solver = FFTFDSolver(x, y, z)
+        row = {"theta": theta, "LzHs": s, "ratio": float(RHO.max() / RHO.min())}
+        for form in ["log", "divergence"]:
+            for method, kw in [("picard", dict(max_iter=out["max_iter"])), ("gmres", dict(max_iter=out["max_iter"], restart=50))]:
+                t0 = time.perf_counter()
+                p, info = solver.solve_variable_density(F, RHO, method=method, form=form, tol=1e-10, **kw)
+                row["%s/%s" % (form, method)] = {"iterations": int(info["iterations"]), "converged": bool(info["converged"]),
+                                                 "error_l2": rel2(p, P), "time": time.perf_counter() - t0}
+        out["cases"].append(row)
+        print("divform theta=%g Lz/Hs=%g ratio=%.3g:" % (theta, s, row["ratio"]),
+              {k: (v["iterations"], v["converged"]) for k, v in row.items() if isinstance(v, dict)}, flush=True)
+    return out
+
+
+# ---------------------------------------------------------------------------------------
 def best_time(fun, repeats=3):
     best = float("inf")
     for _ in range(repeats):
@@ -301,7 +322,7 @@ def exp_perf():
 
 
 if __name__ == "__main__":
-    groups = {"const": exp_const, "nonuniform": exp_nonuniform, "vd": exp_vd, "perf": exp_perf}
+    groups = {"const": exp_const, "nonuniform": exp_nonuniform, "vd": exp_vd, "divform": exp_divform, "perf": exp_perf}
     selected = sys.argv[1:] or list(groups)
     results = json.load(open(OUT)) if os.path.exists(OUT) else {}
     for name in selected:

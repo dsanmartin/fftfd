@@ -104,6 +104,30 @@ def _add_density_term(g, p, bx, by, bz, d1, bottom, top, dx, dy, sign):
                 g[i, j, k] += sign * (bx[i, j, k] * px + by[i, j, k] * py + bz[i, j, k] * pz)
 
 
+def div_eta_grad(eta, p, kx, ky, z, g_bottom=None):
+    """
+    Conservative  d/dx(eta dp/dx) + d/dy(eta dp/dy) + d/dz(eta dp/dz)  on the periodic block (nx, ny, Nz):
+    pseudo-spectral in x and y, and the face-based difference D_z(eta_face G_z p) in z, which is the
+    same factorisation as the three-point second derivative of the direct solver. p[:, :, -1] holds the
+    Dirichlet value at the top (the top row of the result is not used). At the bottom the boundary flux
+    is eta * g_bottom (mirror node); only the mirror closure uses that row.
+    kx: (nx,) wavenumbers; ky: (ny//2 + 1,) wavenumbers of the real transform (Nyquist set to zero).
+    """
+    nx, ny, _ = p.shape
+    P = sfft.rfft2(p, axes=(0, 1))
+    px = sfft.irfft2(1j * kx[:, None, None] * P, s=(nx, ny), axes=(0, 1))
+    py = sfft.irfft2(1j * ky[None, :, None] * P, s=(nx, ny), axes=(0, 1))
+    out = sfft.irfft2(1j * kx[:, None, None] * sfft.rfft2(eta * px, axes=(0, 1))
+                      + 1j * ky[None, :, None] * sfft.rfft2(eta * py, axes=(0, 1)), s=(nx, ny), axes=(0, 1))
+    h = np.diff(z)
+    flux = 0.5 * (eta[:, :, 1:] + eta[:, :, :-1]) * (p[:, :, 1:] - p[:, :, :-1]) / h   # faces k + 1/2
+    out[:, :, 1:-1] += (flux[:, :, 1:] - flux[:, :, :-1]) / (0.5 * (h[1:] + h[:-1]))
+    bottom = 0.0 if g_bottom is None else eta[:, :, 0] * g_bottom
+    out[:, :, 0] += 2.0 * (flux[:, :, 0] - bottom) / h[0]
+    out[:, :, -1] = 0.0
+    return out
+
+
 def log_density_gradient(rho, x, y, z):
     """grad(rho) / rho on the periodic block, with the same differences used for p."""
     r = np.ascontiguousarray(rho[:-1, :-1, :])
@@ -217,7 +241,8 @@ class FFTFDSolver:
         return self._pad(self._solve_block(f[:-1, :-1, :], pt, gb))
 
     def solve_variable_density(self, f, rho, p0=None, p_top=None, method="picard", tol=1e-10,
-                               max_iter=200, omega=1.0, restart=30, callback=None, dpdz_bottom=None):
+                               max_iter=200, omega=1.0, restart=30, callback=None, dpdz_bottom=None,
+                               form="log"):
         """
         Solve  lap(p) - grad(rho)/rho . grad(p) = f  for a general density rho(x, y, z).
 
@@ -227,22 +252,52 @@ class FFTFDSolver:
 
         method : 'picard'   p^{m+1} = (1 - omega) p^m + omega L^{-1}(f + B p^m)
                  'gmres'    GMRES on (I - L^{-1} B) p = L^{-1} f
+        form   : 'log'          B p = (grad(log rho) - beta e_z) . grad p   (default)
+                 'divergence'   splitting of div(rho^{-1} grad p) = f / rho as in Dong and Shen:
+                                lap p = div((1 - rho0/rho) grad p) + rho0 f / rho, rho0 = min rho.
+                                Requires beta = 0.
         Returns (p, info). info['residuals'] holds the stopping quantity at each iteration:
         |p^{m+1} - p^m|_inf / |p^{m+1}|_inf for Picard, the relative preconditioned residual for
         GMRES. info['pr_norm'] is the relative preconditioned residual in the 2-norm for both
         (for Picard it is normalised by the first one, which equals GMRES's when p0 = 0).
         """
         fb = np.ascontiguousarray(f[:-1, :-1, :])
-        bx, by, bz = log_density_gradient(rho, self.x, self.y, self.z)
-        bz = bz - self.beta[None, None, :]
         pt = None if p_top is None else np.ascontiguousarray(p_top[:-1, :-1])
         gb = None if dpdz_bottom is None else np.ascontiguousarray(dpdz_bottom[:-1, :-1])
-        args = (bx, by, bz, self.d1, self.w_bottom, self.w_top, self.dx, self.dy, 1.0)
+        if form == "log":
+            bx, by, bz = log_density_gradient(rho, self.x, self.y, self.z)
+            bz = bz - self.beta[None, None, :]
+            args = (bx, by, bz, self.d1, self.w_bottom, self.w_top, self.dx, self.dy, 1.0)
+
+            def add_term(g, p):
+                _add_density_term(g, p, *args)
+        elif form == "divergence":
+            if np.any(self.beta != 0):
+                raise ValueError("form='divergence' requires beta = 0")
+            rb = np.ascontiguousarray(rho[:-1, :-1, :])
+            eta = 1.0 - rb.min() / rb
+            fb = rb.min() * fb / rb
+            Lx, Ly = self.x[-1] - self.x[0], self.y[-1] - self.y[0]
+            kx = 2 * np.pi * np.fft.fftfreq(self.nx, d=1.0 / self.nx) / Lx
+            ky = 2 * np.pi * np.fft.rfftfreq(self.ny, d=1.0 / self.ny) / Ly
+            if self.nx % 2 == 0:
+                kx[self.nx // 2] = 0.0
+            if self.ny % 2 == 0:
+                ky[-1] = 0.0
+
+            def add_term(g, p):
+                q = p
+                if pt is not None and not np.array_equal(p[:, :, -1], pt):
+                    q = p.copy()
+                    q[:, :, -1] = pt
+                g += div_eta_grad(eta, q, kx, ky, self.z, gb)
+        else:
+            raise ValueError("form must be 'log' or 'divergence'")
 
         def T(p):  # one sweep: L^{-1}(f + B p)
             t0 = time.perf_counter()
             g = fb.copy()
-            _add_density_term(g, p, *args)
+            add_term(g, p)
             self.timings["rhs"] += time.perf_counter() - t0
             return self._solve_block(g, pt, gb)
 

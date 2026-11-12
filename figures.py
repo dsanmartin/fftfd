@@ -244,17 +244,15 @@ def fig_fields_manufactured():
     ph, _ = FFTFDSolver(x, x, z).solve_variable_density(F, RHO, method="gmres", tol=1e-10)
     cases.append((x, z, P, ph, RHO, None))
 
-    # Layout in figure fractions: three square plot areas per row; the exact and numerical
-    # solutions share one colour bar, the error has its own.
+    # One image per problem: three square plot areas (exact, numerical, relative error); the exact
+    # and numerical solutions share one colour bar, the error has its own.
     w, cbw, gap = 0.235, 0.012, 0.012
     x1, x2, x3 = 0.06, 0.32, 0.675
     side = w * TEXTWIDTH                     # plot area side in inches
-    band = side + 0.30                       # row pitch
-    height = 3 * band + 0.38
-    fig = plt.figure(figsize=(TEXTWIDTH, height), layout="none")
-    for i, (xc, zc, P, Ph, RHO, zmax) in enumerate(cases):
-        y0 = (0.42 + (2 - i) * band) / height
-        h = side / height
+    height = side + 0.68
+    for name, (xc, zc, P, Ph, RHO, zmax) in zip(["const", "layer", "vd"], cases):
+        fig = plt.figure(figsize=(TEXTWIDTH, height), layout="none")
+        y0, h = 0.42 / height, side / height
         ax1, ax2, ax3 = (fig.add_axes([xx, y0, w, h]) for xx in (x1, x2, x3))
         cax12 = fig.add_axes([x2 + w + gap, y0, cbw, h])
         cax3 = fig.add_axes([x3 + w + gap, y0, cbw, h])
@@ -271,14 +269,11 @@ def fig_fields_manufactured():
             ax.set_xlim(0, L)
             ax.set_ylim(0, L if zmax is None else zmax)
             ax.set_xticks([0, 2, 4, 6])
-            if i < len(cases) - 1:
-                ax.set_xticklabels([])
-            else:
-                ax.set_xlabel(r"$x$")
+            ax.set_xlabel(r"$x$")
         for ax in (ax2, ax3):
             ax.set_yticklabels([])
         ax1.set_ylabel(r"$z$")
-    save(fig, "fields_manufactured")
+        save(fig, "fields_%s" % name)
 
 
 def fds_snapshot(t_target=6.2):
@@ -340,13 +335,16 @@ def fig_fds_iterations():
     ax.legend(loc="upper center", ncol=2, fontsize=7, columnspacing=1.2, handlelength=1.8)
     save(fig, "fds_iterations")
 
-    fig, ax = new(HALF)
-    ax.semilogy(t[1:], r["lagged_error"], "-", color=C[1], lw=1.1, label="error after one lagged sweep")
-    ax.semilogy(t[1:], r["step_change"], "-", color=C[0], lw=1.1, label="pressure change per time step")
-    ax.set_ylim(1e-2, 30)
+    fig, ax = new(WIDE)
+    ax.semilogy(t[1:], r["step_change"], "-", color=C[0], lw=1.1, label=r"guess $p^n$")
+    ax.semilogy(t[1:], r["lagged_error"], ":", color=C[0], lw=1.1, label=r"one sweep from $p^n$")
+    ax.semilogy(t[2:], r["extrapolation_error"], "-", color=C[1], lw=1.1, label=r"guess $2p^n-p^{n-1}$")
+    ax.semilogy(t[2:], r["lagged_error_linear"], ":", color=C[1], lw=1.1, label=r"one sweep from $2p^n-p^{n-1}$")
+    ax.set_ylim(5e-3, 2)
     ax.set_xlabel(r"time (s)")
-    ax.set_ylabel("relative difference")
-    ax.legend(loc="upper center", fontsize=7, handlelength=1.8)
+    ax.set_ylabel(r"relative error at $t^{n+1}$")
+    fig.legend(*ax.get_legend_handles_labels(), loc="outside upper center", ncol=2, fontsize=7,
+               handlelength=1.8, columnspacing=1.2, frameon=False)
     save(fig, "fds_lagged")
 
 

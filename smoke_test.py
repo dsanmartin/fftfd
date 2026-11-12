@@ -77,6 +77,10 @@ def main():
     check("variable density, GMRES", ig["converged"] and rel(pg, pp) < 1e-7 and ig["iterations"] < ip["iterations"],
           "%d iterations, difference to fixed point %.1e" % (ig["iterations"], rel(pg, pp)))
 
+    pd, idv = s.solve_variable_density(F, RHO, method="gmres", form="divergence", tol=1e-10, restart=50, max_iter=500)
+    check("variable density, divergence-form splitting", idv["converged"] and rel(pd, P) < 2e-2,
+          "%d iterations, error %.1e" % (idv["iterations"], rel(pd, P)))
+
     # 5. Stratified operator: a density that depends on z only is solved without iterating
     P, RHO, F = mf.fields(x, x, x, mf.z_thesis, bump, strat=10.0 / L)
     sb = FFTFDSolver(x, x, x, beta=mean_stratification(RHO, x, x, x))

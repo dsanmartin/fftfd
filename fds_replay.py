@@ -222,14 +222,15 @@ def main():
     variants = [("poisson", "picard"), ("poisson", "gmres"), ("stratified", "picard"), ("stratified", "gmres")]
     tols = [1e-6, 1e-10]
     res = {"times": [float(t) for t in times], "grid": [nx, ny, nz], "density_ratio": [], "gamma": [], "Lz_beta": [],
-           "lagged_error": [], "step_change": [], "replay_error": [], "runs": {}}
+           "lagged_error": [], "step_change": [], "replay_error": [], "runs": {},
+           "lagged_error_linear": [], "extrapolation_error": []}
     for op, method in variants:
         for start_kind in ["cold", "warm"]:
             for tol in tols:
                 res["runs"]["%s/%s/%s/%g" % (op, method, start_kind, tol)] = {"iterations": [], "error": [], "converged": []}
 
     plain = FFTFDSolver(x, y, z)
-    previous = None
+    previous, before = None, None
     for n in range(nt):
         rho, p_fds = pad(rho_all[n]), pad(p_all[n])
         f = apply_operator(plain, p_fds, rho)
@@ -261,9 +262,45 @@ def main():
             p1, _ = plain.solve_variable_density(f, rho, p0=previous, method="picard", tol=0.0, max_iter=1, **bc)
             res["lagged_error"].append(float(np.linalg.norm(p1 - ref) / nref))
             res["step_change"].append(float(np.linalg.norm(previous - ref) / nref))
-        previous = ref
+        # the same sweep from the linear extrapolation 2 p^n - p^{n-1} (Dodd and Ferrante's choice)
+        if before is not None:
+            guess = 2 * previous - before
+            p1, _ = plain.solve_variable_density(f, rho, p0=guess, method="picard", tol=0.0, max_iter=1, **bc)
+            res["lagged_error_linear"].append(float(np.linalg.norm(p1 - ref) / nref))
+            res["extrapolation_error"].append(float(np.linalg.norm(guess - ref) / nref))
+        previous, before = ref, previous
         if n % 20 == 0:
             print("step %3d  t=%.3f  rho ratio %.2f  gamma %.1f" % (n, times[n], res["density_ratio"][-1], res["gamma"][-1]), flush=True)
+
+    # divergence-form splitting on every 10th step; the data are rebuilt with its own discrete operator
+    # so that the FDS pressure is again the exact discrete solution
+    from solver import div_eta_grad
+    ones = np.ones_like(pad(rho_all[0]))
+    kx = 2 * np.pi * np.fft.fftfreq(nx, d=1.0 / nx) / Lx
+    ky = 2 * np.pi * np.fft.rfftfreq(ny, d=1.0 / ny) / Ly
+    if nx % 2 == 0:
+        kx[nx // 2] = 0.0
+    if ny % 2 == 0:
+        ky[-1] = 0.0
+    res["divform"] = {"steps": [], "log/picard": [], "log/gmres": [], "divergence/picard": [], "divergence/gmres": []}
+    for n in range(0, nt, 10):
+        rho, p_fds = pad(rho_all[n]), pad(p_all[n])
+        wb = plain.w_bottom
+        g_bot = wb[0] * p_fds[:, :, 0] + wb[1] * p_fds[:, :, 1] + wb[2] * p_fds[:, :, 2]
+        bc = dict(p_top=p_fds[:, :, -1], dpdz_bottom=g_bot)
+        rb = rho[:-1, :-1, :]
+        eta = 1.0 - rb.min() / rb
+        lap = apply_operator(plain, p_fds, ones)[:-1, :-1, :]
+        f_div = pad(rb / rb.min() * (lap - div_eta_grad(eta, p_fds[:-1, :-1, :], kx, ky, z, g_bot[:-1, :-1])))
+        f_log = apply_operator(plain, p_fds, rho)
+        res["divform"]["steps"].append(n)
+        for form, ff in [("log", f_log), ("divergence", f_div)]:
+            for method, kw in [("picard", dict(max_iter=2000)), ("gmres", dict(max_iter=2000, restart=50))]:
+                p, info = plain.solve_variable_density(ff, rho, method=method, form=form, tol=1e-6, **kw, **bc)
+                res["divform"]["%s/%s" % (form, method)].append(
+                    [int(info["iterations"]), bool(info["converged"]), float(np.linalg.norm(p - p_fds) / np.linalg.norm(p_fds))])
+    print("divergence form on %d steps, tol 1e-6:" % len(res["divform"]["steps"]),
+          {k: (np.mean([v[0] for v in vals]), all(v[1] for v in vals)) for k, vals in res["divform"].items() if k != "steps"})
 
     out = os.path.join(os.path.dirname(os.path.abspath(__file__)), "paper", "data", "fds_replay.json")
     json.dump(res, open(out, "w"), indent=1)
@@ -272,6 +309,8 @@ def main():
     print("solution vs FDS pressure: max relative difference %.1e" % np.max(res["replay_error"]))
     print("change of the pressure between consecutive steps: median %.2e, max %.2e" % (np.median(res["step_change"]), np.max(res["step_change"])))
     print("error of one lagged sweep (warm): median %.2e, max %.2e" % (np.median(res["lagged_error"]), np.max(res["lagged_error"])))
+    print("linear extrapolation: guess error median %.2e; after one sweep median %.2e, max %.2e" % (
+        np.median(res["extrapolation_error"]), np.median(res["lagged_error_linear"]), np.max(res["lagged_error_linear"])))
     print("\n%-34s %8s %8s %8s %10s %5s" % ("operator/method/start/tol", "mean it", "min", "max", "max error", "conv"))
     for key, r in res["runs"].items():
         it = np.array(r["iterations"][1:] if "/warm/" in key else r["iterations"])
